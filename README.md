@@ -79,30 +79,7 @@ pip install -r requirements.txt
 python phantomrecon.py
 ```
 
-## 📂 Proje Yapısı
 
-```
-PhantomRecon/
-├── phantomrecon.py          # Ana giriş noktası
-├── requirements.txt         # Python bağımlılıkları
-├── README.md                # Dokümantasyon
-├── LICENSE                  # MIT Lisansı
-├── core/
-│   ├── __init__.py
-│   ├── banner.py            # ASCII banner & UI bileşenleri
-│   └── utils.py             # Yardımcı fonksiyonlar
-├── modules/
-│   ├── __init__.py
-│   ├── phone_lookup.py      # Telefon OSINT
-│   ├── ip_lookup.py         # IP bilgi toplama
-│   ├── email_osint.py       # Email OSINT
-│   ├── username_search.py   # Kullanıcı adı tarama
-│   ├── whois_lookup.py      # WHOIS sorgusu
-│   ├── subdomain_finder.py  # Subdomain keşfi
-│   ├── port_scanner.py      # Port tarayıcı
-│   └── exif_extractor.py    # EXIF metadata çıkarma
-└── reports/                 # Otomatik oluşturulan raporlar
-```
 
 ## 🛡️ Sorumluluk Reddi
 
