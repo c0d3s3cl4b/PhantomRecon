@@ -1,4 +1,4 @@
-"""Username OSINT across public profile URLs."""
+"""Username OSINT across public profile URLs with conservative verification."""
 
 from __future__ import annotations
 
@@ -47,10 +47,34 @@ PLATFORMS = [
     ("Replit", "https://replit.com/@{}"),
 ]
 
+# These sites have sufficiently stable 200/404 profile semantics for a high-confidence
+# status-only check. Other platforms frequently return a generic HTTP 200 page for missing
+# users, bot challenges, or login walls, so a 200 is reported as an unverified candidate.
+RELIABLE_STATUS_PLATFORMS = {
+    "Bitbucket",
+    "Dev.to",
+    "Docker Hub",
+    "GitHub",
+    "HackerOne",
+    "Keybase",
+    "PyPI",
+}
+
 HEADERS = {
-    "User-Agent": "PhantomRecon/2.0 (+authorized OSINT)",
+    "User-Agent": "PhantomRecon/2.2.1 (+authorized OSINT)",
     "Accept": "text/html,*/*",
 }
+
+
+def classify_response(platform: str, status_code: int) -> tuple[str, str]:
+    """Return a conservative verification state and confidence for an HTTP response."""
+    if status_code in {404, 410}:
+        return "not_found", "high"
+    if status_code == 200 and platform in RELIABLE_STATUS_PLATFORMS:
+        return "confirmed", "high"
+    if status_code == 200:
+        return "candidate", "low"
+    return "unknown", "low"
 
 
 def check_platform(
@@ -58,7 +82,7 @@ def check_platform(
     url: str,
     timeout: float = 8.0,
 ) -> dict[str, object]:
-    """Check whether a public profile URL appears to exist."""
+    """Check a public profile URL without treating every HTTP 200 as confirmed."""
     try:
         response = requests.get(
             url,
@@ -66,10 +90,13 @@ def check_platform(
             timeout=timeout,
             allow_redirects=False,
         )
+        state, confidence = classify_response(platform, response.status_code)
         return {
             "platform": platform,
             "url": url,
-            "found": response.status_code == 200,
+            "found": state == "confirmed",
+            "state": state,
+            "confidence": confidence,
             "status_code": response.status_code,
             "error": None,
         }
@@ -78,9 +105,18 @@ def check_platform(
             "platform": platform,
             "url": url,
             "found": False,
+            "state": "error",
+            "confidence": "low",
             "status_code": None,
             "error": str(exc),
         }
+
+
+def _state(item: dict[str, object]) -> str:
+    value = item.get("state")
+    if isinstance(value, str):
+        return value
+    return "confirmed" if item.get("found") else "not_found"
 
 
 def search_username(
@@ -89,7 +125,7 @@ def search_username(
     timeout: float = 8.0,
     workers: int = 10,
 ) -> ScanResult:
-    """Search public profile URLs for a username."""
+    """Search public profile URLs for a username with conservative confidence labels."""
     username = username.strip()
     if len(username) < 2 or any(char.isspace() for char in username):
         return ScanResult.failure("username_search", username, "Invalid username")
@@ -111,8 +147,10 @@ def search_username(
             results.append(future.result())
 
     results.sort(key=lambda item: str(item["platform"]))
-    found = [item for item in results if item["found"]]
-    errors = [item for item in results if item["error"]]
+    confirmed = [item for item in results if _state(item) == "confirmed"]
+    candidates = [item for item in results if _state(item) == "candidate"]
+    unknown = [item for item in results if _state(item) == "unknown"]
+    errors = [item for item in results if item.get("error")]
 
     return ScanResult(
         module="username_search",
@@ -120,10 +158,17 @@ def search_username(
         data={
             "username": username,
             "platforms_scanned": len(results),
-            "profiles_found": len(found),
+            "profiles_found": len(confirmed),
+            "candidate_profiles": len(candidates),
+            "unknown_checks": len(unknown),
             "request_errors": len(errors),
-            "profiles": found,
+            "profiles": confirmed,
+            "candidates": candidates,
             "checks": results,
+            "verification_note": (
+                "Only high-confidence status semantics are counted as confirmed. "
+                "Candidate profiles require manual verification."
+            ),
         },
     )
 
@@ -146,29 +191,36 @@ def run() -> None:
         return
 
     profiles = result.data["profiles"]
+    candidates = result.data["candidates"]
     if profiles:
         table = Table(
-            title=f"[bold green]Profiles Found ({len(profiles)})[/bold green]",
+            title=f"[bold green]Confirmed Profiles ({len(profiles)})[/bold green]",
             box=box.ROUNDED,
             border_style="green",
         )
         table.add_column("Platform")
         table.add_column("URL")
-        table.add_column("Status")
+        table.add_column("Confidence")
         for profile in profiles:
             table.add_row(
                 str(profile["platform"]),
                 str(profile["url"]),
-                str(profile["status_code"]),
+                str(profile.get("confidence", "high")),
             )
         console.print(Align.center(table))
     else:
-        print_error("No profiles positively identified.")
+        print_error("No high-confidence profiles identified.")
+
+    if candidates:
+        print_info(
+            f"{len(candidates)} additional HTTP 200 result(s) require manual verification."
+        )
 
     report = {
         "Username": target,
         "Platforms Scanned": result.data["platforms_scanned"],
-        "Profiles Found": result.data["profiles_found"],
+        "Confirmed Profiles": result.data["profiles_found"],
+        "Candidates": result.data["candidate_profiles"],
     }
     for profile in profiles:
         report[str(profile["platform"])] = profile["url"]

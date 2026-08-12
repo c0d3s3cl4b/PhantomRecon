@@ -5,7 +5,9 @@ from core.result import ScanResult
 
 
 def test_report_payload_wraps_results():
-    payload = report_payload([ScanResult(module="ip_lookup", target="8.8.8.8", data={"ok": True})])
+    payload = report_payload(
+        [ScanResult(module="ip_lookup", target="8.8.8.8", data={"ok": True})]
+    )
     assert payload["schema"] == "phantomrecon.report.v1"
     assert payload["result_count"] == 1
 
@@ -27,3 +29,29 @@ def test_write_html_report_escapes_values(tmp_path):
     assert "&lt;script&gt;" in content
     assert "&lt;b&gt;x&lt;/b&gt;" in content
     assert "<script>" not in content
+
+
+def test_write_html_report_renders_summary_and_nested_tables(tmp_path):
+    path = tmp_path / "report.html"
+    result = ScanResult(
+        module="username_search",
+        target="tester",
+        data={
+            "profiles_found": 1,
+            "profiles": [
+                {
+                    "platform": "GitHub",
+                    "url": "https://github.com/tester",
+                    "state": "confirmed",
+                }
+            ],
+        },
+    )
+    write_html_report([result], path)
+    content = path.read_text(encoding="utf-8")
+    assert "Total results" in content
+    assert "Successful" in content
+    assert "username_search" in content
+    assert "profiles_found" in content
+    assert "GitHub" in content
+    assert "https://github.com/tester" in content
