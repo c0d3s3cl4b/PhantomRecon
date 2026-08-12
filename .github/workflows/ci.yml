@@ -28,23 +28,18 @@ jobs:
       - name: Install project
         run: python -m pip install --upgrade pip && pip install -e ".[dev]"
 
-      - name: Ruff (V2.1 surface)
+      - name: Ruff
         run: >-
           ruff check
           cli.py
           core/builtin_providers.py
           core/config.py
           core/http.py
+          core/plugins.py
           core/providers.py
+          core/reporting.py
           core/result.py
-          modules/ip_lookup.py
-          modules/whois_lookup.py
-          modules/phone_lookup.py
-          modules/email_osint.py
-          modules/username_search.py
-          modules/subdomain_finder.py
-          modules/port_scanner.py
-          modules/exif_extractor.py
+          modules
           tests
 
       - name: Tests
@@ -55,3 +50,9 @@ jobs:
 
       - name: Provider diagnostics
         run: phantomrecon providers
+
+      - name: Plugin diagnostics
+        run: phantomrecon plugins
+
+      - name: Config diagnostics
+        run: phantomrecon config --json
