@@ -28,9 +28,10 @@ jobs:
       - name: Install project
         run: python -m pip install --upgrade pip && pip install -e ".[dev]"
 
-      - name: Ruff (V2 engines)
+      - name: Ruff (V2 surface)
         run: >-
           ruff check
+          cli.py
           core/result.py
           modules/ip_lookup.py
           modules/whois_lookup.py
