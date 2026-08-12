@@ -104,7 +104,7 @@ def scan_port(
                 "state": "open",
                 "service": COMMON_PORTS.get(port, "unknown"),
             }
-    except (socket.timeout, ConnectionRefusedError, OSError):
+    except (TimeoutError, ConnectionRefusedError, OSError):
         return None
 
 
