@@ -1,4 +1,4 @@
-"""Command-line entry point for PhantomRecon V2."""
+"""Command-line entry point for PhantomRecon."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from rich.table import Table
 
 from core.result import ScanResult
 
-VERSION = "2.1.0"
+VERSION = "2.2.0a1"
 console = Console()
 
 MODULES = {
@@ -46,14 +46,25 @@ def _add_output_options(parser: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="phantomrecon",
-        description="PhantomRecon V2 - OSINT and authorized reconnaissance framework",
+        description="PhantomRecon 2.2 - OSINT and authorized reconnaissance framework",
     )
     parser.add_argument("--version", action="version", version=f"PhantomRecon {VERSION}")
-
     subparsers = parser.add_subparsers(dest="command")
+
     subparsers.add_parser("menu", help="Open the classic interactive menu")
     subparsers.add_parser("doctor", help="Check runtime, config, and dependencies")
     subparsers.add_parser("providers", help="List registered external data providers")
+    config_parser = subparsers.add_parser("config", help="Show effective runtime configuration")
+    config_parser.add_argument("--json", action="store_true", dest="as_json")
+
+    plugins_parser = subparsers.add_parser("plugins", help="Discover installed plugins")
+    plugins_parser.add_argument("--load", action="store_true", help="Attempt to import plugins")
+    plugins_parser.add_argument("--json", action="store_true", dest="as_json")
+
+    report_parser = subparsers.add_parser("report", help="Convert saved results into a report")
+    report_parser.add_argument("input", type=Path, help="ScanResult JSON or PhantomRecon report JSON")
+    report_parser.add_argument("--format", choices=("json", "html"), default="html")
+    report_parser.add_argument("--output", type=Path)
 
     module_parser = subparsers.add_parser("module")
     module_parser.add_argument("name", choices=sorted(MODULES))
@@ -106,11 +117,10 @@ def build_parser() -> argparse.ArgumentParser:
 def run_doctor() -> int:
     from core.config import settings
 
-    table = Table(title="PhantomRecon V2 Doctor")
+    table = Table(title="PhantomRecon Doctor")
     table.add_column("Component")
     table.add_column("Status")
     table.add_column("Details")
-
     healthy = sys.version_info >= (3, 10)
     table.add_row(
         "Python",
@@ -125,10 +135,10 @@ def run_doctor() -> int:
             status = "MISSING"
             healthy = False
         table.add_row(module_name, status, purpose)
-
     table.add_row("HTTP timeout", "OK", f"{settings.http_timeout}s")
     table.add_row("HTTP retries", "OK", str(settings.http_retries))
     table.add_row("Max workers", "OK", str(settings.max_workers))
+    table.add_row("Report directory", "OK", str(settings.report_directory))
     console.print(table)
     return 0 if healthy else 1
 
@@ -143,6 +153,92 @@ def run_providers() -> int:
     for provider in registry.list():
         table.add_row(provider.name, provider.capability)
     console.print(table)
+    return 0
+
+
+def run_config(*, as_json: bool) -> int:
+    from core.config import settings
+
+    data = settings.to_dict()
+    if as_json:
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+        return 0
+    table = Table(title="PhantomRecon Configuration")
+    table.add_column("Setting")
+    table.add_column("Value")
+    for key, value in data.items():
+        table.add_row(key, str(value))
+    console.print(table)
+    return 0
+
+
+def run_plugins(*, load: bool, as_json: bool) -> int:
+    from core.plugins import discover_plugins
+
+    plugins = discover_plugins(load=load)
+    if as_json:
+        print(json.dumps([plugin.to_dict() for plugin in plugins], indent=2, ensure_ascii=False))
+        return 0
+    table = Table(title="PhantomRecon Plugins")
+    table.add_column("Name")
+    table.add_column("Distribution")
+    table.add_column("Version")
+    table.add_column("Status")
+    for plugin in plugins:
+        status = "error" if plugin.error else ("loaded" if plugin.loaded else "discovered")
+        table.add_row(
+            plugin.name,
+            plugin.distribution or "-",
+            plugin.version or "-",
+            status,
+        )
+    if not plugins:
+        table.add_row("No third-party plugins installed", "-", "-", "-")
+    console.print(table)
+    return 1 if any(plugin.error for plugin in plugins) else 0
+
+
+def _result_from_dict(item: dict[str, object]) -> ScanResult:
+    return ScanResult(
+        module=str(item.get("module", "unknown")),
+        target=str(item.get("target", "unknown")),
+        data=dict(item.get("data", {})) if isinstance(item.get("data"), dict) else {},
+        status=str(item.get("status", "success")),
+        errors=[str(value) for value in item.get("errors", [])]
+        if isinstance(item.get("errors"), list)
+        else [],
+        timestamp=str(item.get("timestamp", "")),
+    )
+
+
+def _load_report_results(path: Path) -> list[ScanResult]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("Input JSON must be an object")
+    raw_results = payload.get("results")
+    if isinstance(raw_results, list):
+        return [_result_from_dict(item) for item in raw_results if isinstance(item, dict)]
+    if "module" in payload:
+        return [_result_from_dict(payload)]
+    raise ValueError("Input is not a PhantomRecon ScanResult/report")
+
+
+def run_report(input_path: Path, *, output_format: str, output: Path | None) -> int:
+    from core.config import settings
+    from core.reporting import write_html_report, write_json_report
+
+    try:
+        results = _load_report_results(input_path)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        console.print(f"[red]Report error:[/red] {exc}")
+        return 2
+    suffix = ".html" if output_format == "html" else ".json"
+    destination = output or settings.report_directory / f"phantomrecon-report{suffix}"
+    if output_format == "html":
+        write_html_report(results, destination)
+    else:
+        write_json_report(results, destination)
+    console.print(f"[green]Report saved:[/green] {destination}")
     return 0
 
 
@@ -174,11 +270,7 @@ def _run_direct_command(args: argparse.Namespace) -> ScanResult | None:
     if args.command == "email":
         from modules.email_osint import analyze_email
 
-        return analyze_email(
-            args.target,
-            reputation=not args.no_reputation,
-            timeout=args.timeout,
-        )
+        return analyze_email(args.target, reputation=not args.no_reputation, timeout=args.timeout)
     if args.command == "username":
         from modules.username_search import search_username
 
@@ -199,12 +291,7 @@ def _run_direct_command(args: argparse.Namespace) -> ScanResult | None:
             ports = parse_ports(args.port_spec)
         except ValueError as exc:
             return ScanResult.failure("port_scanner", args.target, str(exc))
-        return scan_ports(
-            args.target,
-            ports,
-            timeout=args.timeout,
-            workers=args.workers,
-        )
+        return scan_ports(args.target, ports, timeout=args.timeout, workers=args.workers)
     if args.command == "exif":
         from modules.exif_extractor import extract_exif
 
@@ -224,6 +311,12 @@ def main() -> int:
         return run_doctor()
     if args.command == "providers":
         return run_providers()
+    if args.command == "config":
+        return run_config(as_json=args.as_json)
+    if args.command == "plugins":
+        return run_plugins(load=args.load, as_json=args.as_json)
+    if args.command == "report":
+        return run_report(args.input, output_format=args.format, output=args.output)
     if args.command == "module":
         importlib.import_module(MODULES[args.name]).run()
         return 0
