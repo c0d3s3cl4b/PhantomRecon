@@ -2,6 +2,27 @@
 
 All notable changes to PhantomRecon will be documented in this file.
 
+## [2.2.0] - 2026-08-12
+
+### Added
+- Python entry-point based third-party plugin discovery through `phantomrecon.plugins`
+- `phantomrecon plugins` diagnostics with metadata-only discovery by default
+- `phantomrecon config` for effective runtime configuration
+- unified JSON and HTML report generation through `phantomrecon report`
+- configurable report directory with `PHANTOMRECON_REPORT_DIR`
+- per-host HTTP request throttling with `PHANTOMRECON_HTTP_MIN_INTERVAL`
+- provider readiness, metadata, descriptions, and JSON diagnostics
+- automated tag-driven GitHub Release workflow with wheel and source distribution assets
+
+### Changed
+- improved provider diagnostics and terminal tables
+- shared HTTP client now honors Retry-After and applies bounded per-host throttling
+- package and CLI promoted to stable `2.2.0`
+
+### Safety
+- plugin discovery does not import third-party plugin code unless `--load` is explicitly requested
+- active DNS checks and TCP scanning retain their existing bounded limits and authorization guidance
+
 ## [2.1.0] - 2026-08-12
 
 ### Added
