@@ -12,7 +12,6 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
-from core.banner import AUTHOR
 from core.result import ScanResult
 
 VERSION = "2.0.0a1"
