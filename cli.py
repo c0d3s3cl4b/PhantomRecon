@@ -8,7 +8,6 @@ import json
 import platform
 import sys
 from pathlib import Path
-from typing import Callable
 
 from rich.console import Console
 from rich.table import Table
