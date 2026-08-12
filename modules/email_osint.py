@@ -5,36 +5,76 @@ from __future__ import annotations
 import dns.resolver
 import requests
 
-from core.banner import get_input, print_error, print_info, print_success, print_warning, show_module_banner
+from core.banner import (
+    get_input,
+    print_error,
+    print_info,
+    print_success,
+    print_warning,
+    show_module_banner,
+)
 from core.result import ScanResult
 from core.utils import ask_save_report, display_results_table, pause, validate_email
 
 DISPOSABLE_DOMAINS = {
-    "tempmail.com", "throwaway.email", "guerrillamail.com", "mailinator.com",
-    "10minutemail.com", "trashmail.com", "yopmail.com", "sharklasers.com",
-    "guerrillamailblock.com", "grr.la", "dispostable.com", "maildrop.cc",
-    "temp-mail.org", "fakeinbox.com", "tempail.com", "mohmal.com", "burnermail.io",
+    "10minutemail.com",
+    "burnermail.io",
+    "dispostable.com",
+    "fakeinbox.com",
+    "grr.la",
+    "guerrillamail.com",
+    "guerrillamailblock.com",
+    "maildrop.cc",
+    "mailinator.com",
+    "mohmal.com",
+    "sharklasers.com",
+    "temp-mail.org",
+    "tempail.com",
+    "tempmail.com",
+    "throwaway.email",
+    "trashmail.com",
+    "yopmail.com",
 }
 
 FREE_PROVIDERS = {
-    "gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "protonmail.com",
-    "aol.com", "icloud.com", "mail.com", "yandex.com", "zoho.com",
+    "aol.com",
+    "gmail.com",
+    "hotmail.com",
+    "icloud.com",
+    "mail.com",
+    "outlook.com",
+    "protonmail.com",
+    "yahoo.com",
+    "yandex.com",
+    "zoho.com",
 }
+
+DNS_ERRORS = (
+    dns.resolver.NoAnswer,
+    dns.resolver.NXDOMAIN,
+    dns.resolver.NoNameservers,
+    dns.resolver.Timeout,
+)
 
 
 def check_mx_records(domain: str) -> list[str]:
+    """Return MX hosts for a domain."""
     try:
         records = dns.resolver.resolve(domain, "MX")
-    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.NoNameservers, dns.resolver.Timeout):
+    except DNS_ERRORS:
         return []
     return [str(record.exchange).rstrip(".") for record in records]
 
 
-def check_email_reputation(email: str, timeout: float = 10.0) -> dict | None:
+def check_email_reputation(
+    email: str,
+    timeout: float = 10.0,
+) -> dict | None:
+    """Query the optional public email reputation endpoint."""
     try:
         response = requests.get(
             f"https://emailrep.io/{email}",
-            headers={"User-Agent": "PhantomRecon OSINT Tool"},
+            headers={"User-Agent": "PhantomRecon/2.0"},
             timeout=timeout,
         )
         if response.status_code == 200:
@@ -44,7 +84,13 @@ def check_email_reputation(email: str, timeout: float = 10.0) -> dict | None:
     return None
 
 
-def analyze_email(target: str, *, reputation: bool = True, timeout: float = 10.0) -> ScanResult:
+def analyze_email(
+    target: str,
+    *,
+    reputation: bool = True,
+    timeout: float = 10.0,
+) -> ScanResult:
+    """Analyze an email address with local checks and optional reputation data."""
     target = target.strip().lower()
     if not validate_email(target):
         return ScanResult.failure("email_osint", target, "Invalid email format")
@@ -83,32 +129,42 @@ def analyze_email(target: str, *, reputation: bool = True, timeout: float = 10.0
 
 
 def _display_data(result: ScanResult) -> dict[str, object]:
-    d = result.data
+    data = result.data
+    provider = (
+        "Free Email Provider"
+        if data.get("provider_type") == "free"
+        else "Corporate / Custom Domain"
+    )
     values: dict[str, object] = {
-        "Email": d.get("email"),
-        "Username": d.get("username"),
-        "Domain": d.get("domain"),
+        "Email": data.get("email"),
+        "Username": data.get("username"),
+        "Domain": data.get("domain"),
         "Format Valid": "✅ Yes",
-        "MX Records": ", ".join(d.get("mx_records", [])) or "❌ Not found",
-        "Mail Server Exists": "✅ Yes" if d.get("mail_server_exists") else "❌ No",
-        "Disposable": "⚠️ Yes" if d.get("disposable") else "✅ No",
-        "Provider Type": "Free Email Provider" if d.get("provider_type") == "free" else "Corporate / Custom Domain",
+        "MX Records": ", ".join(data.get("mx_records", [])) or "❌ Not found",
+        "Mail Server Exists": (
+            "✅ Yes" if data.get("mail_server_exists") else "❌ No"
+        ),
+        "Disposable": "⚠️ Yes" if data.get("disposable") else "✅ No",
+        "Provider Type": provider,
     }
-    if d.get("reputation_available"):
+    if data.get("reputation_available"):
         values.update(
             {
-                "Reputation": d.get("reputation") or "N/A",
-                "Suspicious": "⚠️ Yes" if d.get("suspicious") else "✅ No",
-                "Malicious": "🔴 Yes" if d.get("malicious") else "✅ No",
-                "Data Breach": "⚠️ Yes" if d.get("data_breach") else "No info",
-                "First Seen": d.get("first_seen") or "N/A",
-                "Profiles": ", ".join(d.get("profiles", [])) or "Not found",
+                "Reputation": data.get("reputation") or "N/A",
+                "Suspicious": "⚠️ Yes" if data.get("suspicious") else "✅ No",
+                "Malicious": "🔴 Yes" if data.get("malicious") else "✅ No",
+                "Data Breach": (
+                    "⚠️ Yes" if data.get("data_breach") else "No info"
+                ),
+                "First Seen": data.get("first_seen") or "N/A",
+                "Profiles": ", ".join(data.get("profiles", [])) or "Not found",
             }
         )
     return values
 
 
 def run() -> None:
+    """Run the classic interactive email OSINT interface."""
     show_module_banner("Email OSINT", "📧")
     print_info("Enter the email address to analyze")
     target = get_input("Email")
@@ -125,7 +181,10 @@ def run() -> None:
         return
 
     if not result.data.get("reputation_available"):
-        print_warning("Email reputation service did not return data; local/DNS analysis is still valid.")
+        print_warning(
+            "Email reputation service did not return data; "
+            "local/DNS analysis is still valid."
+        )
 
     results = _display_data(result)
     print_success("Email analysis complete!")
