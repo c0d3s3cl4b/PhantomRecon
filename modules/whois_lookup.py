@@ -1,96 +1,112 @@
-"""
-PhantomRecon - WHOIS Lookup Module
-Queries WHOIS data for domain names.
-"""
+"""PhantomRecon WHOIS lookup module."""
+
+from __future__ import annotations
+
+from typing import Any
 
 import whois
 
-from core.banner import show_module_banner, print_success, print_error, print_info, get_input, console
-from core.utils import validate_domain, display_results_table, ask_save_report, pause
+from core.banner import get_input, print_error, print_info, print_success, show_module_banner
+from core.result import ScanResult
+from core.utils import ask_save_report, display_results_table, pause, validate_domain
 
 
-def run():
-    """Run the WHOIS lookup module."""
+def normalize_domain(target: str) -> str:
+    domain = target.strip().lower().replace("http://", "").replace("https://", "").split("/")[0]
+    if not validate_domain(domain):
+        raise ValueError("Invalid domain name")
+    return domain
+
+
+def _first(value: Any) -> Any:
+    if isinstance(value, list):
+        return value[0] if value else None
+    return value
+
+
+def _list(value: Any, limit: int | None = None) -> list[str]:
+    if value is None:
+        return []
+    items = value if isinstance(value, list) else [value]
+    if limit is not None:
+        items = items[:limit]
+    return [str(item) for item in items if item]
+
+
+def lookup_whois(target: str) -> ScanResult:
+    try:
+        domain = normalize_domain(target)
+    except ValueError as exc:
+        return ScanResult.failure("whois_lookup", target, str(exc))
+
+    try:
+        record = whois.whois(domain)
+    except Exception as exc:
+        return ScanResult.failure("whois_lookup", target, f"WHOIS lookup failed: {exc}")
+
+    domain_name = _first(getattr(record, "domain_name", None))
+    if not domain_name:
+        return ScanResult.failure("whois_lookup", target, "WHOIS information not found")
+
+    data = {
+        "domain": str(domain_name),
+        "registrar": getattr(record, "registrar", None),
+        "whois_server": getattr(record, "whois_server", None),
+        "creation_date": str(_first(getattr(record, "creation_date", None)) or ""),
+        "updated_date": str(_first(getattr(record, "updated_date", None)) or ""),
+        "expiration_date": str(_first(getattr(record, "expiration_date", None)) or ""),
+        "name_servers": _list(getattr(record, "name_servers", None), limit=5),
+        "status": _list(getattr(record, "status", None), limit=3),
+        "organization": getattr(record, "org", None),
+        "country": getattr(record, "country", None),
+        "state": getattr(record, "state", None),
+        "city": getattr(record, "city", None),
+        "address": getattr(record, "address", None),
+        "emails": _list(getattr(record, "emails", None)),
+        "dnssec": getattr(record, "dnssec", None),
+    }
+    return ScanResult(module="whois_lookup", target=domain, data=data)
+
+
+def _display_data(result: ScanResult) -> dict[str, object]:
+    d = result.data
+    return {
+        "Domain": d.get("domain") or "N/A",
+        "Registrar": d.get("registrar") or "N/A",
+        "WHOIS Server": d.get("whois_server") or "N/A",
+        "Creation Date": d.get("creation_date") or "N/A",
+        "Last Update": d.get("updated_date") or "N/A",
+        "Expiration Date": d.get("expiration_date") or "N/A",
+        "Name Servers": ", ".join(d.get("name_servers", [])) or "N/A",
+        "Status": ", ".join(d.get("status", [])) or "N/A",
+        "Organization": d.get("organization") or "N/A",
+        "Country": d.get("country") or "N/A",
+        "State": d.get("state") or "N/A",
+        "City": d.get("city") or "N/A",
+        "Address": d.get("address") or "N/A",
+        "Email": ", ".join(d.get("emails", [])) or "N/A",
+        "DNSSEC": d.get("dnssec") or "N/A",
+    }
+
+
+def run() -> None:
     show_module_banner("WHOIS Lookup", "🔍")
-
     print_info("Enter the domain name for WHOIS lookup (e.g., example.com)")
     target = get_input("Domain")
-
     if not target:
         print_error("No domain entered.")
         pause()
         return
 
-    # Clean up domain
-    target = target.replace("http://", "").replace("https://", "").split("/")[0]
-
-    if not validate_domain(target):
-        print_error("Invalid domain name!")
+    print_info(f"Querying WHOIS for {target}...")
+    result = lookup_whois(target)
+    if result.status != "success":
+        print_error(result.errors[0] if result.errors else "WHOIS lookup failed")
         pause()
         return
 
-    try:
-        print_info(f"Querying WHOIS for {target}...")
-
-        w = whois.whois(target)
-
-        if not w.domain_name:
-            print_error("WHOIS information not found.")
-            pause()
-            return
-
-        # Process domain names
-        domain_name = w.domain_name
-        if isinstance(domain_name, list):
-            domain_name = domain_name[0]
-
-        # Process name servers
-        name_servers = w.name_servers
-        if isinstance(name_servers, list):
-            name_servers = ", ".join(name_servers[:5])
-
-        # Process dates
-        creation_date = w.creation_date
-        if isinstance(creation_date, list):
-            creation_date = creation_date[0]
-
-        expiration_date = w.expiration_date
-        if isinstance(expiration_date, list):
-            expiration_date = expiration_date[0]
-
-        updated_date = w.updated_date
-        if isinstance(updated_date, list):
-            updated_date = updated_date[0]
-
-        # Process emails
-        emails = w.emails
-        if isinstance(emails, list):
-            emails = ", ".join(emails)
-
-        results = {
-            "Domain": domain_name,
-            "Registrar": w.registrar or "N/A",
-            "WHOIS Server": w.whois_server or "N/A",
-            "Creation Date": str(creation_date) if creation_date else "N/A",
-            "Last Update": str(updated_date) if updated_date else "N/A",
-            "Expiration Date": str(expiration_date) if expiration_date else "N/A",
-            "Name Servers": name_servers or "N/A",
-            "Status": ", ".join(w.status[:3]) if isinstance(w.status, list) else (w.status or "N/A"),
-            "Organization": w.org or "N/A",
-            "Country": w.country or "N/A",
-            "State": w.state or "N/A",
-            "City": w.city or "N/A",
-            "Address": w.address or "N/A",
-            "Email": emails or "N/A",
-            "DNSSEC": w.dnssec or "N/A",
-        }
-
-        print_success("WHOIS lookup complete!")
-        display_results_table("🔍 WHOIS Lookup Results", results)
-
-        ask_save_report(results, "whois_lookup", target)
-
-    except Exception as e:
-        print_error(f"WHOIS lookup failed: {e}")
-
+    results = _display_data(result)
+    print_success("WHOIS lookup complete!")
+    display_results_table("🔍 WHOIS Lookup Results", results)
+    ask_save_report(results, "whois_lookup", result.target)
     pause()
