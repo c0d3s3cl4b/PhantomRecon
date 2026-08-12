@@ -34,6 +34,7 @@ class Settings:
     http_timeout: float = 10.0
     http_retries: int = 2
     http_backoff: float = 0.4
+    http_min_interval: float = 0.15
     user_agent: str = "PhantomRecon/2.2 (+authorized OSINT)"
     max_workers: int = 20
     report_directory: Path = Path("reports")
@@ -44,6 +45,10 @@ class Settings:
             http_timeout=max(0.1, _env_float("PHANTOMRECON_HTTP_TIMEOUT", 10.0)),
             http_retries=max(0, min(_env_int("PHANTOMRECON_HTTP_RETRIES", 2), 5)),
             http_backoff=max(0.0, _env_float("PHANTOMRECON_HTTP_BACKOFF", 0.4)),
+            http_min_interval=max(
+                0.0,
+                min(_env_float("PHANTOMRECON_HTTP_MIN_INTERVAL", 0.15), 5.0),
+            ),
             user_agent=os.getenv(
                 "PHANTOMRECON_USER_AGENT",
                 "PhantomRecon/2.2 (+authorized OSINT)",
