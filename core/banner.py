@@ -3,17 +3,18 @@ PhantomRecon - Banner & UI Components
 Cyberpunk-themed terminal UI using Rich library
 """
 
+import random
+
+from rich import box
+from rich.align import Align
 from rich.console import Console
 from rich.panel import Panel
-from rich.text import Text
 from rich.table import Table
-from rich.align import Align
-from rich import box
-import random
+from rich.text import Text
 
 console = Console()
 
-VERSION = "1.0.0"
+VERSION = "2.0.0a1"
 AUTHOR = "c0d3s3cl4b"
 
 BANNER_ART = r"""
@@ -147,6 +148,9 @@ def print_warning(message: str):
 def get_input(prompt: str = "Target") -> str:
     """Get user input with styled prompt."""
     try:
-        return console.input(f"\n  [bold cyan]┌──([/bold cyan][bold yellow]PhantomRecon[/bold yellow][bold cyan])─[{prompt}]\n  └──▶ [/bold cyan]").strip()
+        return console.input(
+            f"\n  [bold cyan]┌──([/bold cyan][bold yellow]PhantomRecon[/bold yellow][bold cyan])─[{prompt}]\n"
+            "  └──▶ [/bold cyan]"
+        ).strip()
     except (EOFError, KeyboardInterrupt):
         return ""

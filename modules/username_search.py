@@ -1,169 +1,177 @@
-"""
-PhantomRecon - Username Search Module
-Searches for a username across 25+ social media platforms.
-"""
+"""Username OSINT across public profile URLs."""
 
-import requests
+from __future__ import annotations
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from rich.table import Table
-from rich.align import Align
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+import requests
 from rich import box
+from rich.align import Align
+from rich.table import Table
 
-from core.banner import show_module_banner, print_success, print_error, print_info, get_input, console
+from core.banner import (
+    console,
+    get_input,
+    print_error,
+    print_info,
+    show_module_banner,
+)
+from core.result import ScanResult
 from core.utils import ask_save_report, pause
 
-
-# Platform definitions: (name, url_template, error_type, error_indicator)
-# error_type: "status" = check HTTP status, "text" = check for text in response
 PLATFORMS = [
-    ("GitHub", "https://github.com/{}", "status", None),
-    ("Twitter/X", "https://x.com/{}", "status", None),
-    ("Instagram", "https://www.instagram.com/{}/", "status", None),
-    ("Reddit", "https://www.reddit.com/user/{}/", "status", None),
-    ("TikTok", "https://www.tiktok.com/@{}", "status", None),
-    ("YouTube", "https://www.youtube.com/@{}", "status", None),
-    ("Pinterest", "https://www.pinterest.com/{}/", "status", None),
-    ("Twitch", "https://www.twitch.tv/{}", "status", None),
-    ("Steam", "https://steamcommunity.com/id/{}", "status", None),
-    ("Medium", "https://medium.com/@{}", "status", None),
-    ("GitLab", "https://gitlab.com/{}", "status", None),
-    ("Bitbucket", "https://bitbucket.org/{}/", "status", None),
-    ("Dev.to", "https://dev.to/{}", "status", None),
-    ("HackerOne", "https://hackerone.com/{}", "status", None),
-    ("Keybase", "https://keybase.io/{}", "status", None),
-    ("Gravatar", "https://en.gravatar.com/{}", "status", None),
-    ("Patreon", "https://www.patreon.com/{}", "status", None),
-    ("Spotify", "https://open.spotify.com/user/{}", "status", None),
-    ("SoundCloud", "https://soundcloud.com/{}", "status", None),
-    ("Flickr", "https://www.flickr.com/people/{}/", "status", None),
-    ("Telegram", "https://t.me/{}", "status", None),
-    ("Docker Hub", "https://hub.docker.com/u/{}", "status", None),
-    ("npm", "https://www.npmjs.com/~{}", "status", None),
-    ("PyPI", "https://pypi.org/user/{}/", "status", None),
-    ("Replit", "https://replit.com/@{}", "status", None),
+    ("GitHub", "https://github.com/{}"),
+    ("Twitter/X", "https://x.com/{}"),
+    ("Instagram", "https://www.instagram.com/{}/"),
+    ("Reddit", "https://www.reddit.com/user/{}/"),
+    ("TikTok", "https://www.tiktok.com/@{}"),
+    ("YouTube", "https://www.youtube.com/@{}"),
+    ("Pinterest", "https://www.pinterest.com/{}/"),
+    ("Twitch", "https://www.twitch.tv/{}"),
+    ("Steam", "https://steamcommunity.com/id/{}"),
+    ("Medium", "https://medium.com/@{}"),
+    ("GitLab", "https://gitlab.com/{}"),
+    ("Bitbucket", "https://bitbucket.org/{}/"),
+    ("Dev.to", "https://dev.to/{}"),
+    ("HackerOne", "https://hackerone.com/{}"),
+    ("Keybase", "https://keybase.io/{}"),
+    ("Gravatar", "https://en.gravatar.com/{}"),
+    ("Patreon", "https://www.patreon.com/{}"),
+    ("Spotify", "https://open.spotify.com/user/{}"),
+    ("SoundCloud", "https://soundcloud.com/{}"),
+    ("Flickr", "https://www.flickr.com/people/{}/"),
+    ("Telegram", "https://t.me/{}"),
+    ("Docker Hub", "https://hub.docker.com/u/{}"),
+    ("npm", "https://www.npmjs.com/~{}"),
+    ("PyPI", "https://pypi.org/user/{}/"),
+    ("Replit", "https://replit.com/@{}"),
 ]
 
+HEADERS = {
+    "User-Agent": "PhantomRecon/2.0 (+authorized OSINT)",
+    "Accept": "text/html,*/*",
+}
 
-def check_platform(platform_name: str, url: str) -> dict:
-    """Check if a username exists on a given platform."""
+
+def check_platform(
+    platform: str,
+    url: str,
+    timeout: float = 8.0,
+) -> dict[str, object]:
+    """Check whether a public profile URL appears to exist."""
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                          "AppleWebKit/537.36 (KHTML, like Gecko) "
-                          "Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-        }
-        response = requests.get(url, headers=headers, timeout=8, allow_redirects=False)
-
-        # Most platforms return 200 for existing users and 404 for non-existing
-        found = response.status_code == 200
-
+        response = requests.get(
+            url,
+            headers=HEADERS,
+            timeout=timeout,
+            allow_redirects=False,
+        )
         return {
-            "platform": platform_name,
+            "platform": platform,
             "url": url,
-            "found": found,
+            "found": response.status_code == 200,
             "status_code": response.status_code,
+            "error": None,
         }
-    except requests.RequestException:
+    except requests.RequestException as exc:
         return {
-            "platform": platform_name,
+            "platform": platform,
             "url": url,
             "found": False,
-            "status_code": "Error",
+            "status_code": None,
+            "error": str(exc),
         }
 
 
-def run():
-    """Run the username search module."""
-    show_module_banner("Username Search", "👤")
+def search_username(
+    username: str,
+    *,
+    timeout: float = 8.0,
+    workers: int = 10,
+) -> ScanResult:
+    """Search public profile URLs for a username."""
+    username = username.strip()
+    if len(username) < 2 or any(char.isspace() for char in username):
+        return ScanResult.failure("username_search", username, "Invalid username")
 
+    workers = max(1, min(workers, 20))
+    results: list[dict[str, object]] = []
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [
+            executor.submit(
+                check_platform,
+                name,
+                template.format(username),
+                timeout,
+            )
+            for name, template in PLATFORMS
+        ]
+        for future in as_completed(futures):
+            results.append(future.result())
+
+    results.sort(key=lambda item: str(item["platform"]))
+    found = [item for item in results if item["found"]]
+    errors = [item for item in results if item["error"]]
+
+    return ScanResult(
+        module="username_search",
+        target=username,
+        data={
+            "username": username,
+            "platforms_scanned": len(results),
+            "profiles_found": len(found),
+            "request_errors": len(errors),
+            "profiles": found,
+            "checks": results,
+        },
+    )
+
+
+def run() -> None:
+    """Run the classic interactive username search interface."""
+    show_module_banner("Username Search", "👤")
     print_info("Enter the username you want to search for")
     target = get_input("Username")
-
     if not target:
         print_error("No username entered.")
         pause()
         return
 
-    if len(target) < 2:
-        print_error("Username too short!")
+    print_info(f"Searching {len(PLATFORMS)} public profile URLs...")
+    result = search_username(target)
+    if result.status != "success":
+        print_error(result.errors[0])
         pause()
         return
 
-    print_info(f"Searching for [bold]{target}[/bold] across {len(PLATFORMS)} platforms...")
-    console.print()
-
-    found_profiles = []
-    not_found = []
-
-    with Progress(
-        SpinnerColumn(style="cyan"),
-        TextColumn("[bold cyan]{task.description}"),
-        BarColumn(bar_width=40, complete_style="green"),
-        TextColumn("[bold]{task.completed}/{task.total}"),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Scanning platforms...", total=len(PLATFORMS))
-
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = {}
-            for name, url_template, error_type, error_indicator in PLATFORMS:
-                url = url_template.format(target)
-                future = executor.submit(check_platform, name, url)
-                futures[future] = name
-
-            for future in as_completed(futures):
-                result = future.result()
-                if result["found"]:
-                    found_profiles.append(result)
-                else:
-                    not_found.append(result)
-                progress.advance(task)
-
-    # Display results
-    console.print()
-
-    if found_profiles:
+    profiles = result.data["profiles"]
+    if profiles:
         table = Table(
-            title=f"[bold green]✅ Profiles Found ({len(found_profiles)})[/bold green]",
+            title=f"[bold green]Profiles Found ({len(profiles)})[/bold green]",
             box=box.ROUNDED,
             border_style="green",
-            padding=(0, 1),
         )
-        table.add_column("#", style="bold yellow", justify="center", width=4)
-        table.add_column("Platform", style="bold white", width=15)
-        table.add_column("URL", style="cyan", width=50)
-        table.add_column("Status", style="green", justify="center", width=8)
-
-        for i, profile in enumerate(sorted(found_profiles, key=lambda x: x["platform"]), 1):
+        table.add_column("Platform")
+        table.add_column("URL")
+        table.add_column("Status")
+        for profile in profiles:
             table.add_row(
-                str(i),
-                profile["platform"],
-                profile["url"],
+                str(profile["platform"]),
+                str(profile["url"]),
                 str(profile["status_code"]),
             )
-
         console.print(Align.center(table))
     else:
-        print_error("No profiles found on any platform.")
+        print_error("No profiles positively identified.")
 
-    console.print()
-
-    summary = {
+    report = {
         "Username": target,
-        "Platforms Scanned": str(len(PLATFORMS)),
-        "Profiles Found": str(len(found_profiles)),
-        "Not Found": str(len(not_found)),
+        "Platforms Scanned": result.data["platforms_scanned"],
+        "Profiles Found": result.data["profiles_found"],
     }
+    for profile in profiles:
+        report[str(profile["platform"])] = profile["url"]
 
-    # Add found URLs to report
-    report_data = {**summary}
-    for profile in found_profiles:
-        report_data[f"📌 {profile['platform']}"] = profile["url"]
-
-    ask_save_report(report_data, "username_search", target)
-
+    ask_save_report(report, "username_search", target)
     pause()
