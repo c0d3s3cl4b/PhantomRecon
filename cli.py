@@ -14,7 +14,7 @@ from rich.table import Table
 
 from core.result import ScanResult
 
-VERSION = "2.2.0"
+VERSION = "2.2.1"
 console = Console()
 
 MODULES = {
@@ -274,21 +274,27 @@ def _render_result(result: ScanResult, *, as_json: bool, output: Path | None) ->
 def _run_direct_command(args: argparse.Namespace) -> ScanResult | None:
     if args.command == "ip":
         from modules.ip_lookup import lookup_ip
+
         return lookup_ip(args.target, timeout=args.timeout)
     if args.command == "whois":
         from modules.whois_lookup import lookup_whois
+
         return lookup_whois(args.target)
     if args.command == "phone":
         from modules.phone_lookup import lookup_phone
+
         return lookup_phone(args.target)
     if args.command == "email":
         from modules.email_osint import analyze_email
+
         return analyze_email(args.target, reputation=not args.no_reputation, timeout=args.timeout)
     if args.command == "username":
         from modules.username_search import search_username
+
         return search_username(args.target, timeout=args.timeout, workers=args.workers)
     if args.command == "subdomain":
         from modules.subdomain_finder import find_subdomains
+
         return find_subdomains(
             args.target,
             active_dns=args.active_dns,
@@ -297,6 +303,7 @@ def _run_direct_command(args: argparse.Namespace) -> ScanResult | None:
         )
     if args.command == "ports":
         from modules.port_scanner import parse_ports, scan_ports
+
         try:
             ports = parse_ports(args.port_spec)
         except ValueError as exc:
@@ -304,6 +311,7 @@ def _run_direct_command(args: argparse.Namespace) -> ScanResult | None:
         return scan_ports(args.target, ports, timeout=args.timeout, workers=args.workers)
     if args.command == "exif":
         from modules.exif_extractor import extract_exif
+
         return extract_exif(args.target)
     return None
 
@@ -313,6 +321,7 @@ def main() -> int:
     args = parser.parse_args()
     if args.command in (None, "menu"):
         from phantomrecon import main as interactive_main
+
         interactive_main()
         return 0
     if args.command == "doctor":
