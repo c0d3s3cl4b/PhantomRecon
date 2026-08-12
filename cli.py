@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import json
 import platform
 import sys
+from pathlib import Path
 
 from rich.console import Console
 from rich.table import Table
@@ -53,6 +55,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     module_parser.add_argument("name", choices=sorted(MODULES))
 
+    ip_parser = subparsers.add_parser("ip", help="Look up an IP address or domain")
+    ip_parser.add_argument("target", help="IP address or domain name")
+    ip_parser.add_argument("--json", action="store_true", dest="as_json", help="Emit JSON")
+    ip_parser.add_argument("--output", type=Path, help="Write structured JSON to a file")
+    ip_parser.add_argument("--timeout", type=float, default=10.0, help="HTTP timeout in seconds")
+
     return parser
 
 
@@ -89,6 +97,38 @@ def run_interactive_module(name: str) -> int:
     return 0
 
 
+def _write_json(payload: dict[str, object], output: Path | None) -> None:
+    text = json.dumps(payload, indent=2, ensure_ascii=False)
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(text + "\n", encoding="utf-8")
+    else:
+        print(text)
+
+
+def run_ip(target: str, *, as_json: bool, output: Path | None, timeout: float) -> int:
+    from modules.ip_lookup import lookup_ip
+
+    result = lookup_ip(target, timeout=timeout)
+    payload = result.to_dict()
+
+    if as_json or output is not None:
+        _write_json(payload, output)
+        if output is not None and not as_json:
+            console.print(f"[green]Saved:[/green] {output}")
+    elif result.status == "success":
+        table = Table(title=f"IP Lookup: {target}")
+        table.add_column("Field", style="cyan")
+        table.add_column("Value")
+        for key, value in result.data.items():
+            table.add_row(key.replace("_", " ").title(), str(value))
+        console.print(table)
+    else:
+        console.print(f"[red]Error:[/red] {result.errors[0] if result.errors else 'lookup failed'}")
+
+    return 0 if result.status == "success" else 1
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
@@ -104,6 +144,14 @@ def main() -> int:
 
     if args.command == "module":
         return run_interactive_module(args.name)
+
+    if args.command == "ip":
+        return run_ip(
+            args.target,
+            as_json=args.as_json,
+            output=args.output,
+            timeout=args.timeout,
+        )
 
     parser.print_help()
     return 2
