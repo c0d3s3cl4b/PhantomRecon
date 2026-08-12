@@ -37,7 +37,7 @@ class Settings:
     max_workers: int = 20
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         return cls(
             http_timeout=max(0.1, _env_float("PHANTOMRECON_HTTP_TIMEOUT", 10.0)),
             http_retries=max(0, min(_env_int("PHANTOMRECON_HTTP_RETRIES", 2), 5)),
