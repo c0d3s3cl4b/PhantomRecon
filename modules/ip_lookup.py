@@ -57,7 +57,10 @@ def lookup_ip(target: str, timeout: float = 10.0) -> ScanResult:
         return ScanResult.failure("ip_lookup", target, f"IP service request failed: {exc}")
 
     if not isinstance(payload, dict) or payload.get("status") != "success":
-        message = payload.get("message", "IP lookup failed") if isinstance(payload, dict) else "IP lookup failed"
+        if isinstance(payload, dict):
+            message = payload.get("message", "IP lookup failed")
+        else:
+            message = "IP lookup failed"
         return ScanResult.failure("ip_lookup", target, message)
 
     try:
