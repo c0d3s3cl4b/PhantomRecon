@@ -2,6 +2,18 @@
 
 All notable changes to PhantomRecon will be documented in this file.
 
+## [2.2.1] - 2026-08-12
+
+### Fixed
+- username search no longer treats every HTTP 200 response as a confirmed profile
+- platforms with generic 200 pages, bot challenges, or login walls are reported as low-confidence candidates
+- redirects and blocked responses are reported as unknown instead of false positives
+
+### Changed
+- username results now separate confirmed profiles, candidates, unknown checks, and request errors
+- HTML reports now include summary metrics, status badges, responsive cards, nested tables, and improved dark-mode readability
+- nested username/IP result data is rendered as structured tables instead of raw JSON blocks
+
 ## [2.2.0] - 2026-08-12
 
 ### Added
