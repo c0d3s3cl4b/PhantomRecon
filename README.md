@@ -1,221 +1,169 @@
-# 👻 PhantomRecon V2
+# 👻 PhantomRecon 2.2
 
-**PhantomRecon** is a modular OSINT and authorized reconnaissance framework written in Python. V2 keeps the classic interactive Rich interface while adding structured engines, an installable CLI, JSON output, tests, CI, and a shared provider layer.
+**PhantomRecon** is a modular OSINT and authorized reconnaissance framework written in Python. The 2.2 development line adds third-party plugin discovery, unified reporting, richer runtime diagnostics, and automated GitHub releases while keeping the eight structured engines and classic Rich interface.
 
 > Use PhantomRecon only on systems, accounts, domains, files, and infrastructure you own or are explicitly authorized to assess.
 
 ## Highlights
 
-- 8 modular reconnaissance and OSINT engines
-- installable `phantomrecon` command
+- 8 structured reconnaissance and OSINT engines
+- installable `phantomrecon` CLI
 - machine-readable `ScanResult` output
-- JSON export with `--json` and `--output`
-- classic interactive cyberpunk/Rich menu remains available
-- bounded concurrency and timeout controls
-- passive-first subdomain discovery
-- bounded TCP connect scanning for authorized targets
+- JSON export and unified JSON/HTML reporting
+- Python entry-point based third-party plugin discovery
+- classic interactive cyberpunk/Rich menu
+- bounded concurrency, timeouts, DNS checks, and TCP scans
 - centralized HTTP retry/backoff policy
-- pluggable external data provider registry
-- environment-aware runtime settings
-- unit tests and GitHub Actions across Python 3.10, 3.11, and 3.12
+- pluggable external provider registry
+- environment-aware runtime configuration
+- CI on Python 3.10, 3.11, and 3.12
+- tag-driven GitHub Release automation
 
-## Modules
+## Install
 
-| Command | Purpose |
-| --- | --- |
-| `phone` | phone-number metadata and validation |
-| `ip` | public IP/domain network information |
-| `email` | email format, MX, provider and optional reputation data |
-| `username` | public profile URL checks across multiple platforms |
-| `whois` | normalized domain WHOIS information |
-| `subdomain` | passive certificate-transparency discovery with optional DNS checks |
-| `ports` | bounded TCP connect scan for authorized targets |
-| `exif` | local image metadata and GPS extraction |
-
-## Requirements
-
-- Python 3.10+
-- pip
-
-## Installation
+Stable users should use the latest release. For 2.2 development:
 
 ```bash
 git clone https://github.com/c0d3s3cl4b/PhantomRecon.git
 cd PhantomRecon
-pip install -e .
-```
-
-For development:
-
-```bash
+git checkout feature/phantomrecon-2.2
 pip install -e ".[dev]"
 ```
 
 Verify the environment:
 
 ```bash
-phantomrecon doctor
-phantomrecon providers
 phantomrecon --version
+phantomrecon doctor
+phantomrecon config
+phantomrecon providers
+phantomrecon plugins
 ```
 
-## Runtime Configuration
+## Commands
 
-PhantomRecon V2.1 reads optional environment variables for shared network behavior:
+| Command | Purpose |
+| --- | --- |
+| `ip` | public IP/domain metadata |
+| `whois` | normalized WHOIS information |
+| `phone` | phone metadata and validation |
+| `email` | email format, MX, provider and optional reputation data |
+| `username` | public profile URL checks |
+| `subdomain` | passive CT discovery with optional authorized DNS checks |
+| `ports` | bounded TCP connect scan for authorized targets |
+| `exif` | local image metadata and GPS extraction |
+| `providers` | list built-in external providers |
+| `plugins` | discover installed third-party PhantomRecon plugins |
+| `config` | display effective runtime settings |
+| `report` | convert saved ScanResult JSON into JSON/HTML reports |
+
+## Runtime Configuration
 
 ```bash
 PHANTOMRECON_HTTP_TIMEOUT=10
 PHANTOMRECON_HTTP_RETRIES=2
 PHANTOMRECON_HTTP_BACKOFF=0.4
-PHANTOMRECON_USER_AGENT="PhantomRecon/2.x"
+PHANTOMRECON_USER_AGENT="PhantomRecon/2.2"
 PHANTOMRECON_MAX_WORKERS=32
+PHANTOMRECON_REPORT_DIR=reports
 ```
 
-`phantomrecon doctor` reports the active timeout, retry count, and worker limit.
+Show effective values with:
+
+```bash
+phantomrecon config
+phantomrecon config --json
+```
 
 ## Provider Layer
 
-External data sources are registered through a shared provider registry. Current built-ins are:
-
-| Provider | Capability |
-| --- | --- |
-| `ip-api` | IP metadata |
-| `emailrep` | optional email reputation |
-| `crt.sh` | passive certificate-transparency discovery |
-
-List active providers with:
+Built-in providers currently include `ip-api`, `emailrep`, and `crt.sh`. IP lookup, optional email reputation, and passive subdomain discovery share the same bounded HTTP session and retry policy.
 
 ```bash
 phantomrecon providers
 ```
 
-IP Lookup, Email OSINT reputation, and passive Subdomain Discovery use the same shared HTTP session with bounded retry/backoff behavior.
+## Plugin System
+
+PhantomRecon 2.2 discovers third-party Python packages through the `phantomrecon.plugins` entry-point group. Discovery is metadata-only by default; plugin code is imported only when `--load` is explicitly supplied.
+
+```bash
+phantomrecon plugins
+phantomrecon plugins --json
+phantomrecon plugins --load
+```
+
+A plugin package can register an entry point in its own `pyproject.toml`:
+
+```toml
+[project.entry-points."phantomrecon.plugins"]
+my-plugin = "my_plugin:plugin"
+```
+
+This keeps third-party extensions outside the PhantomRecon core package and isolates load failures during diagnostics.
+
+## Direct CLI Examples
+
+```bash
+phantomrecon ip 8.8.8.8 --json
+phantomrecon whois example.com --json
+phantomrecon phone +14155552671 --json
+phantomrecon email user@example.com --no-reputation --json
+phantomrecon username c0d3s3cl4b --json
+phantomrecon subdomain example.com --json
+phantomrecon ports 192.168.1.10 --ports 22,80,443 --json
+phantomrecon exif photo.jpg --json
+```
+
+Active DNS checks and TCP port scans should only be used against explicitly authorized targets.
+
+## Reporting
+
+Save a normal engine result first:
+
+```bash
+phantomrecon ip 8.8.8.8 --output reports/ip.json
+```
+
+Then create a standalone HTML or normalized JSON report:
+
+```bash
+phantomrecon report reports/ip.json --format html --output reports/ip.html
+phantomrecon report reports/ip.json --format json --output reports/ip-report.json
+```
+
+HTML values are escaped before rendering. Unified report JSON uses the schema identifier `phantomrecon.report.v1` and can contain multiple structured results.
 
 ## Classic Interactive Mode
 
 ```bash
 phantomrecon
-# or
 phantomrecon menu
-```
-
-Existing modules can also be opened through the compatibility command:
-
-```bash
 phantomrecon module ip
-phantomrecon module email
-phantomrecon module ports
 ```
-
-## Direct CLI Examples
-
-### IP Lookup
-
-```bash
-phantomrecon ip 8.8.8.8
-phantomrecon ip example.com --json
-phantomrecon ip 8.8.8.8 --output reports/ip.json
-```
-
-### WHOIS
-
-```bash
-phantomrecon whois example.com --json
-```
-
-### Phone OSINT
-
-```bash
-phantomrecon phone +14155552671 --json
-```
-
-### Email OSINT
-
-```bash
-phantomrecon email user@example.com --json
-phantomrecon email user@example.com --no-reputation --json
-```
-
-### Username Search
-
-```bash
-phantomrecon username c0d3s3cl4b --json
-```
-
-### Subdomain Discovery
-
-Passive certificate-transparency mode is the default:
-
-```bash
-phantomrecon subdomain example.com --json
-```
-
-Optional bounded DNS checks must be explicitly enabled and should only be used on authorized domains:
-
-```bash
-phantomrecon subdomain example.com --active-dns --json
-```
-
-### Port Scanner
-
-The scanner uses TCP connect checks only. It does not send HTTP payloads to arbitrary services. A single invocation is limited to 1024 ports and worker concurrency is bounded.
-
-```bash
-phantomrecon ports 192.168.1.10
-phantomrecon ports 192.168.1.10 --ports 22,80,443 --json
-phantomrecon ports example.com --ports 1-100 --timeout 0.5 --workers 20
-```
-
-### EXIF Extractor
-
-```bash
-phantomrecon exif photo.jpg
-phantomrecon exif photo.jpg --json
-phantomrecon exif photo.jpg --output reports/photo.json
-```
-
-## Structured Output
-
-V2 engines return a common result model:
-
-```json
-{
-  "module": "ip_lookup",
-  "target": "8.8.8.8",
-  "data": {},
-  "status": "success",
-  "errors": [],
-  "timestamp": "2026-08-12T12:00:00+00:00"
-}
-```
-
-This makes PhantomRecon easier to integrate with scripts, reports, CI workflows, and defensive automation.
 
 ## Development
 
-Run the test suite:
-
 ```bash
 pytest
-```
-
-Run Ruff on the V2.1 surface:
-
-```bash
 ruff check cli.py core modules tests
+phantomrecon doctor
+phantomrecon providers
+phantomrecon plugins
+phantomrecon config --json
 ```
 
-GitHub Actions validates the project on Python 3.10, 3.11, and 3.12 and runs both `phantomrecon doctor` and `phantomrecon providers` as smoke tests.
-
-## Data Sources
-
-External services may rate-limit, change behavior, or become unavailable. PhantomRecon centralizes retries for eligible GET/HEAD requests and treats optional provider failures separately from local validation where possible.
+GitHub Actions validates Python 3.10, 3.11, and 3.12. The release workflow builds wheel/sdist artifacts and automatically creates a GitHub Release when a version tag matching the package version is pushed.
 
 ## Legal and Ethical Use
 
 PhantomRecon is intended for defensive security research, authorized penetration testing, public-information OSINT, education, lab environments, and analysis of files or infrastructure you are permitted to inspect.
 
 Do not use the tool for unauthorized scanning, intrusion, harassment, credential theft, or access to systems without permission.
+
+## Project Files
+
+See `CHANGELOG.md`, `SECURITY.md`, and `CONTRIBUTING.md` for release history, vulnerability reporting, and contribution guidance.
 
 ## License
 
