@@ -21,7 +21,7 @@ class ScanResult:
     )
 
     @classmethod
-    def failure(cls, module: str, target: str, message: str) -> "ScanResult":
+    def failure(cls, module: str, target: str, message: str) -> ScanResult:
         return cls(module=module, target=target, status="error", errors=[message])
 
     def to_dict(self) -> dict[str, Any]:
