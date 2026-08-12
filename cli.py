@@ -14,7 +14,7 @@ from rich.table import Table
 
 from core.result import ScanResult
 
-VERSION = "2.0.0a1"
+VERSION = "2.1.0a1"
 console = Console()
 
 MODULES = {
