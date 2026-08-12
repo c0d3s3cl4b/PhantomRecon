@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import threading
+import time
+from urllib.parse import urlsplit
+
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from core.config import settings
+
+_last_request_at: dict[str, float] = {}
+_rate_limit_lock = threading.Lock()
 
 
 def build_session() -> requests.Session:
@@ -19,6 +26,7 @@ def build_session() -> requests.Session:
         status_forcelist=(429, 500, 502, 503, 504),
         allowed_methods=frozenset({"GET", "HEAD"}),
         raise_on_status=False,
+        respect_retry_after_header=True,
     )
     adapter = HTTPAdapter(max_retries=retry)
     session = requests.Session()
@@ -28,10 +36,30 @@ def build_session() -> requests.Session:
     return session
 
 
+def _throttle(url: str) -> None:
+    """Apply a small per-host delay to reduce accidental request bursts."""
+    interval = settings.http_min_interval
+    if interval <= 0:
+        return
+    host = urlsplit(url).netloc.lower()
+    if not host:
+        return
+    with _rate_limit_lock:
+        now = time.monotonic()
+        previous = _last_request_at.get(host)
+        if previous is not None:
+            delay = interval - (now - previous)
+            if delay > 0:
+                time.sleep(delay)
+                now = time.monotonic()
+        _last_request_at[host] = now
+
+
 session = build_session()
 
 
 def get(url: str, **kwargs) -> requests.Response:
-    """Perform a GET request using shared defaults unless explicitly overridden."""
+    """Perform a rate-limited GET using shared defaults."""
     kwargs.setdefault("timeout", settings.http_timeout)
+    _throttle(url)
     return session.get(url, **kwargs)
