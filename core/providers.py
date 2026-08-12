@@ -13,6 +13,21 @@ class Provider:
     name: str
     capability: str
     handler: ProviderCallable
+    homepage: str = ""
+    description: str = ""
+
+    @property
+    def ready(self) -> bool:
+        return callable(self.handler)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "capability": self.capability,
+            "homepage": self.homepage,
+            "description": self.description,
+            "status": "ready" if self.ready else "unavailable",
+        }
 
 
 class ProviderRegistry:

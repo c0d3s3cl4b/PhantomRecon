@@ -35,9 +35,27 @@ def crtsh_lookup(domain: str, *, timeout: float | None = None) -> list[dict]:
 
 def register_builtin_providers() -> None:
     providers = (
-        Provider("ip-api", "ip_lookup", ip_api_lookup),
-        Provider("emailrep", "email_reputation", emailrep_lookup),
-        Provider("crt.sh", "subdomain_discovery", crtsh_lookup),
+        Provider(
+            "ip-api",
+            "ip_lookup",
+            ip_api_lookup,
+            homepage="https://ip-api.com/",
+            description="Public IP geolocation and network metadata",
+        ),
+        Provider(
+            "emailrep",
+            "email_reputation",
+            emailrep_lookup,
+            homepage="https://emailrep.io/",
+            description="Optional public email reputation data",
+        ),
+        Provider(
+            "crt.sh",
+            "subdomain_discovery",
+            crtsh_lookup,
+            homepage="https://crt.sh/",
+            description="Certificate transparency based passive discovery",
+        ),
     )
     existing = {provider.name for provider in registry.list()}
     for provider in providers:

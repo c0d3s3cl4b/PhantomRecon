@@ -1,9 +1,10 @@
-"""Central configuration for PhantomRecon V2.1."""
+"""Central configuration for PhantomRecon 2.2."""
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 
 def _env_float(name: str, default: float) -> float:
@@ -28,13 +29,15 @@ def _env_int(name: str, default: int) -> int:
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    """Runtime defaults shared by CLI modules and providers."""
+    """Runtime defaults shared by CLI modules, providers, and reporting."""
 
     http_timeout: float = 10.0
     http_retries: int = 2
     http_backoff: float = 0.4
-    user_agent: str = "PhantomRecon/2.1 (+authorized OSINT)"
+    http_min_interval: float = 0.15
+    user_agent: str = "PhantomRecon/2.2 (+authorized OSINT)"
     max_workers: int = 20
+    report_directory: Path = Path("reports")
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -42,12 +45,22 @@ class Settings:
             http_timeout=max(0.1, _env_float("PHANTOMRECON_HTTP_TIMEOUT", 10.0)),
             http_retries=max(0, min(_env_int("PHANTOMRECON_HTTP_RETRIES", 2), 5)),
             http_backoff=max(0.0, _env_float("PHANTOMRECON_HTTP_BACKOFF", 0.4)),
+            http_min_interval=max(
+                0.0,
+                min(_env_float("PHANTOMRECON_HTTP_MIN_INTERVAL", 0.15), 5.0),
+            ),
             user_agent=os.getenv(
                 "PHANTOMRECON_USER_AGENT",
-                "PhantomRecon/2.1 (+authorized OSINT)",
+                "PhantomRecon/2.2 (+authorized OSINT)",
             ),
             max_workers=max(1, min(_env_int("PHANTOMRECON_MAX_WORKERS", 20), 64)),
+            report_directory=Path(os.getenv("PHANTOMRECON_REPORT_DIR", "reports")),
         )
+
+    def to_dict(self) -> dict[str, object]:
+        data = asdict(self)
+        data["report_directory"] = str(self.report_directory)
+        return data
 
 
 settings = Settings.from_env()
