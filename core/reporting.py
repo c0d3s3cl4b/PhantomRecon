@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import html
 import json
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from core.result import ScanResult
 
@@ -43,7 +43,10 @@ def write_html_report(results: Iterable[ScanResult], output: Path) -> Path:
             f"<tr><th>{html.escape(str(key))}</th><td><pre>{_render_value(value)}</pre></td></tr>"
             for key, value in item.items()
         )
-        cards.append(f"<section><h2>{html.escape(str(item['module']))}</h2><table>{rows}</table></section>")
+        cards.append(
+            f"<section><h2>{html.escape(str(item['module']))}</h2>"
+            f"<table>{rows}</table></section>"
+        )
 
     document = f"""<!doctype html>
 <html lang=\"en\">
@@ -52,7 +55,12 @@ def write_html_report(results: Iterable[ScanResult], output: Path) -> Path:
 <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
 <title>PhantomRecon Report</title>
 <style>
-body {{ font-family: system-ui, sans-serif; max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }}
+body {{
+  font-family: system-ui, sans-serif;
+  max-width: 1100px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}}
 section {{ border: 1px solid #ddd; border-radius: 10px; padding: 1rem; margin: 1rem 0; }}
 table {{ width: 100%; border-collapse: collapse; }}
 th, td {{ text-align: left; vertical-align: top; border-bottom: 1px solid #eee; padding: .55rem; }}
