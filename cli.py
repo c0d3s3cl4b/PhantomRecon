@@ -53,7 +53,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("menu", help="Open the classic interactive menu")
     subparsers.add_parser("doctor", help="Check runtime, config, and dependencies")
-    subparsers.add_parser("providers", help="List registered external data providers")
+    providers_parser = subparsers.add_parser(
+        "providers",
+        help="List provider readiness and capabilities",
+    )
+    providers_parser.add_argument("--json", action="store_true", dest="as_json")
+
     config_parser = subparsers.add_parser("config", help="Show effective runtime configuration")
     config_parser.add_argument("--json", action="store_true", dest="as_json")
 
@@ -141,23 +146,36 @@ def run_doctor() -> int:
         table.add_row(module_name, status, purpose)
     table.add_row("HTTP timeout", "OK", f"{settings.http_timeout}s")
     table.add_row("HTTP retries", "OK", str(settings.http_retries))
+    table.add_row("HTTP min interval", "OK", f"{settings.http_min_interval}s/host")
     table.add_row("Max workers", "OK", str(settings.max_workers))
     table.add_row("Report directory", "OK", str(settings.report_directory))
     console.print(table)
     return 0 if healthy else 1
 
 
-def run_providers() -> int:
+def run_providers(*, as_json: bool) -> int:
     import core.builtin_providers  # noqa: F401
     from core.providers import registry
+
+    providers = registry.list()
+    if as_json:
+        print(json.dumps([provider.to_dict() for provider in providers], indent=2))
+        return 0
 
     table = Table(title="PhantomRecon Providers")
     table.add_column("Name")
     table.add_column("Capability")
-    for provider in registry.list():
-        table.add_row(provider.name, provider.capability)
+    table.add_column("Status")
+    table.add_column("Description")
+    for provider in providers:
+        table.add_row(
+            provider.name,
+            provider.capability,
+            "ready" if provider.ready else "unavailable",
+            provider.description or "-",
+        )
     console.print(table)
-    return 0
+    return 0 if all(provider.ready for provider in providers) else 1
 
 
 def run_config(*, as_json: bool) -> int:
@@ -190,12 +208,7 @@ def run_plugins(*, load: bool, as_json: bool) -> int:
     table.add_column("Status")
     for plugin in plugins:
         status = "error" if plugin.error else ("loaded" if plugin.loaded else "discovered")
-        table.add_row(
-            plugin.name,
-            plugin.distribution or "-",
-            plugin.version or "-",
-            status,
-        )
+        table.add_row(plugin.name, plugin.distribution or "-", plugin.version or "-", status)
     if not plugins:
         table.add_row("No third-party plugins installed", "-", "-", "-")
     console.print(table)
@@ -261,27 +274,21 @@ def _render_result(result: ScanResult, *, as_json: bool, output: Path | None) ->
 def _run_direct_command(args: argparse.Namespace) -> ScanResult | None:
     if args.command == "ip":
         from modules.ip_lookup import lookup_ip
-
         return lookup_ip(args.target, timeout=args.timeout)
     if args.command == "whois":
         from modules.whois_lookup import lookup_whois
-
         return lookup_whois(args.target)
     if args.command == "phone":
         from modules.phone_lookup import lookup_phone
-
         return lookup_phone(args.target)
     if args.command == "email":
         from modules.email_osint import analyze_email
-
         return analyze_email(args.target, reputation=not args.no_reputation, timeout=args.timeout)
     if args.command == "username":
         from modules.username_search import search_username
-
         return search_username(args.target, timeout=args.timeout, workers=args.workers)
     if args.command == "subdomain":
         from modules.subdomain_finder import find_subdomains
-
         return find_subdomains(
             args.target,
             active_dns=args.active_dns,
@@ -290,7 +297,6 @@ def _run_direct_command(args: argparse.Namespace) -> ScanResult | None:
         )
     if args.command == "ports":
         from modules.port_scanner import parse_ports, scan_ports
-
         try:
             ports = parse_ports(args.port_spec)
         except ValueError as exc:
@@ -298,7 +304,6 @@ def _run_direct_command(args: argparse.Namespace) -> ScanResult | None:
         return scan_ports(args.target, ports, timeout=args.timeout, workers=args.workers)
     if args.command == "exif":
         from modules.exif_extractor import extract_exif
-
         return extract_exif(args.target)
     return None
 
@@ -308,13 +313,12 @@ def main() -> int:
     args = parser.parse_args()
     if args.command in (None, "menu"):
         from phantomrecon import main as interactive_main
-
         interactive_main()
         return 0
     if args.command == "doctor":
         return run_doctor()
     if args.command == "providers":
-        return run_providers()
+        return run_providers(as_json=args.as_json)
     if args.command == "config":
         return run_config(as_json=args.as_json)
     if args.command == "plugins":
