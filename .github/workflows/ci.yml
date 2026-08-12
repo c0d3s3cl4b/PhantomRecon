@@ -32,6 +32,9 @@ jobs:
         run: >-
           ruff check
           cli.py
+          core/config.py
+          core/http.py
+          core/providers.py
           core/result.py
           modules/ip_lookup.py
           modules/whois_lookup.py
