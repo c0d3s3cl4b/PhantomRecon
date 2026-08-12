@@ -18,19 +18,32 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+
       - name: Install project
         run: python -m pip install --upgrade pip && pip install -e ".[dev]"
-      - name: Ruff (V2 refactored surface)
+
+      - name: Ruff (V2 engines)
         run: >-
-          ruff check core/result.py modules/ip_lookup.py modules/whois_lookup.py
-          modules/phone_lookup.py modules/email_osint.py modules/username_search.py
-          modules/subdomain_finder.py tests
+          ruff check
+          core/result.py
+          modules/ip_lookup.py
+          modules/whois_lookup.py
+          modules/phone_lookup.py
+          modules/email_osint.py
+          modules/username_search.py
+          modules/subdomain_finder.py
+          modules/port_scanner.py
+          modules/exif_extractor.py
+          tests
+
       - name: Tests
         run: pytest
+
       - name: CLI doctor
         run: phantomrecon doctor
