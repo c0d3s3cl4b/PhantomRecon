@@ -62,7 +62,11 @@ def build_parser() -> argparse.ArgumentParser:
     plugins_parser.add_argument("--json", action="store_true", dest="as_json")
 
     report_parser = subparsers.add_parser("report", help="Convert saved results into a report")
-    report_parser.add_argument("input", type=Path, help="ScanResult JSON or PhantomRecon report JSON")
+    report_parser.add_argument(
+        "input",
+        type=Path,
+        help="ScanResult JSON or PhantomRecon report JSON",
+    )
     report_parser.add_argument("--format", choices=("json", "html"), default="html")
     report_parser.add_argument("--output", type=Path)
 
