@@ -5,6 +5,7 @@ from __future__ import annotations
 import dns.resolver
 import requests
 
+import core.builtin_providers  # noqa: F401
 from core.banner import (
     get_input,
     print_error,
@@ -13,6 +14,7 @@ from core.banner import (
     print_warning,
     show_module_banner,
 )
+from core.providers import registry
 from core.result import ScanResult
 from core.utils import ask_save_report, display_results_table, pause, validate_email
 
@@ -58,7 +60,6 @@ DNS_ERRORS = (
 
 
 def check_mx_records(domain: str) -> list[str]:
-    """Return MX hosts for a domain."""
     try:
         records = dns.resolver.resolve(domain, "MX")
     except DNS_ERRORS:
@@ -66,22 +67,13 @@ def check_mx_records(domain: str) -> list[str]:
     return [str(record.exchange).rstrip(".") for record in records]
 
 
-def check_email_reputation(
-    email: str,
-    timeout: float = 10.0,
-) -> dict | None:
-    """Query the optional public email reputation endpoint."""
+def check_email_reputation(email: str, timeout: float = 10.0) -> dict | None:
+    provider = registry.get("emailrep")
     try:
-        response = requests.get(
-            f"https://emailrep.io/{email}",
-            headers={"User-Agent": "PhantomRecon/2.0"},
-            timeout=timeout,
-        )
-        if response.status_code == 200:
-            return response.json()
+        result = provider.handler(email, timeout=timeout)
     except (requests.RequestException, ValueError):
         return None
-    return None
+    return result if isinstance(result, dict) else None
 
 
 def analyze_email(
@@ -90,7 +82,6 @@ def analyze_email(
     reputation: bool = True,
     timeout: float = 10.0,
 ) -> ScanResult:
-    """Analyze an email address with local checks and optional reputation data."""
     target = target.strip().lower()
     if not validate_email(target):
         return ScanResult.failure("email_osint", target, "Invalid email format")
@@ -107,6 +98,7 @@ def analyze_email(
         "disposable": domain in DISPOSABLE_DOMAINS,
         "provider_type": "free" if domain in FREE_PROVIDERS else "custom",
         "reputation_available": False,
+        "reputation_provider": "emailrep" if reputation else None,
     }
 
     if reputation:
@@ -141,9 +133,7 @@ def _display_data(result: ScanResult) -> dict[str, object]:
         "Domain": data.get("domain"),
         "Format Valid": "✅ Yes",
         "MX Records": ", ".join(data.get("mx_records", [])) or "❌ Not found",
-        "Mail Server Exists": (
-            "✅ Yes" if data.get("mail_server_exists") else "❌ No"
-        ),
+        "Mail Server Exists": "✅ Yes" if data.get("mail_server_exists") else "❌ No",
         "Disposable": "⚠️ Yes" if data.get("disposable") else "✅ No",
         "Provider Type": provider,
     }
@@ -153,9 +143,7 @@ def _display_data(result: ScanResult) -> dict[str, object]:
                 "Reputation": data.get("reputation") or "N/A",
                 "Suspicious": "⚠️ Yes" if data.get("suspicious") else "✅ No",
                 "Malicious": "🔴 Yes" if data.get("malicious") else "✅ No",
-                "Data Breach": (
-                    "⚠️ Yes" if data.get("data_breach") else "No info"
-                ),
+                "Data Breach": "⚠️ Yes" if data.get("data_breach") else "No info",
                 "First Seen": data.get("first_seen") or "N/A",
                 "Profiles": ", ".join(data.get("profiles", [])) or "Not found",
             }
@@ -164,7 +152,6 @@ def _display_data(result: ScanResult) -> dict[str, object]:
 
 
 def run() -> None:
-    """Run the classic interactive email OSINT interface."""
     show_module_banner("Email OSINT", "📧")
     print_info("Enter the email address to analyze")
     target = get_input("Email")
@@ -172,20 +159,16 @@ def run() -> None:
         print_error("No email entered.")
         pause()
         return
-
     print_info("Analyzing email and checking reputation...")
     result = analyze_email(target)
     if result.status != "success":
         print_error(result.errors[0] if result.errors else "Email analysis failed")
         pause()
         return
-
     if not result.data.get("reputation_available"):
         print_warning(
-            "Email reputation service did not return data; "
-            "local/DNS analysis is still valid."
+            "Email reputation service did not return data; local/DNS analysis is still valid."
         )
-
     results = _display_data(result)
     print_success("Email analysis complete!")
     display_results_table("📧 Email OSINT Results", results)

@@ -1,6 +1,6 @@
 # 👻 PhantomRecon V2
 
-**PhantomRecon** is a modular OSINT and authorized reconnaissance framework written in Python. V2 keeps the classic interactive Rich interface while adding structured engines, an installable CLI, JSON output, tests, and CI.
+**PhantomRecon** is a modular OSINT and authorized reconnaissance framework written in Python. V2 keeps the classic interactive Rich interface while adding structured engines, an installable CLI, JSON output, tests, CI, and a shared provider layer.
 
 > Use PhantomRecon only on systems, accounts, domains, files, and infrastructure you own or are explicitly authorized to assess.
 
@@ -14,6 +14,9 @@
 - bounded concurrency and timeout controls
 - passive-first subdomain discovery
 - bounded TCP connect scanning for authorized targets
+- centralized HTTP retry/backoff policy
+- pluggable external data provider registry
+- environment-aware runtime settings
 - unit tests and GitHub Actions across Python 3.10, 3.11, and 3.12
 
 ## Modules
@@ -52,8 +55,41 @@ Verify the environment:
 
 ```bash
 phantomrecon doctor
+phantomrecon providers
 phantomrecon --version
 ```
+
+## Runtime Configuration
+
+PhantomRecon V2.1 reads optional environment variables for shared network behavior:
+
+```bash
+PHANTOMRECON_HTTP_TIMEOUT=10
+PHANTOMRECON_HTTP_RETRIES=2
+PHANTOMRECON_HTTP_BACKOFF=0.4
+PHANTOMRECON_USER_AGENT="PhantomRecon/2.x"
+PHANTOMRECON_MAX_WORKERS=32
+```
+
+`phantomrecon doctor` reports the active timeout, retry count, and worker limit.
+
+## Provider Layer
+
+External data sources are registered through a shared provider registry. Current built-ins are:
+
+| Provider | Capability |
+| --- | --- |
+| `ip-api` | IP metadata |
+| `emailrep` | optional email reputation |
+| `crt.sh` | passive certificate-transparency discovery |
+
+List active providers with:
+
+```bash
+phantomrecon providers
+```
+
+IP Lookup, Email OSINT reputation, and passive Subdomain Discovery use the same shared HTTP session with bounded retry/backoff behavior.
 
 ## Classic Interactive Mode
 
@@ -163,33 +199,21 @@ Run the test suite:
 pytest
 ```
 
-Run Ruff on the V2 engine surface:
+Run Ruff on the V2.1 surface:
 
 ```bash
-ruff check core/result.py modules tests
+ruff check cli.py core modules tests
 ```
 
-GitHub Actions validates the project on Python 3.10, 3.11, and 3.12.
+GitHub Actions validates the project on Python 3.10, 3.11, and 3.12 and runs both `phantomrecon doctor` and `phantomrecon providers` as smoke tests.
 
 ## Data Sources
 
-| Service | Use |
-| --- | --- |
-| ip-api.com | public IP/geolocation metadata |
-| crt.sh | certificate-transparency subdomain discovery |
-| emailrep.io | optional email reputation metadata |
-
-External services may rate-limit, change behavior, or become unavailable. PhantomRecon treats optional provider failures separately from local validation where possible.
+External services may rate-limit, change behavior, or become unavailable. PhantomRecon centralizes retries for eligible GET/HEAD requests and treats optional provider failures separately from local validation where possible.
 
 ## Legal and Ethical Use
 
-PhantomRecon is intended for:
-
-- defensive security research
-- authorized penetration testing
-- OSINT research using public information
-- education and lab environments
-- analysis of files and infrastructure you are permitted to inspect
+PhantomRecon is intended for defensive security research, authorized penetration testing, public-information OSINT, education, lab environments, and analysis of files or infrastructure you are permitted to inspect.
 
 Do not use the tool for unauthorized scanning, intrusion, harassment, credential theft, or access to systems without permission.
 

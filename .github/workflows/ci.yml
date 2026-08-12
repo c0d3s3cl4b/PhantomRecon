@@ -28,10 +28,14 @@ jobs:
       - name: Install project
         run: python -m pip install --upgrade pip && pip install -e ".[dev]"
 
-      - name: Ruff (V2 surface)
+      - name: Ruff (V2.1 surface)
         run: >-
           ruff check
           cli.py
+          core/builtin_providers.py
+          core/config.py
+          core/http.py
+          core/providers.py
           core/result.py
           modules/ip_lookup.py
           modules/whois_lookup.py
@@ -48,3 +52,6 @@ jobs:
 
       - name: CLI doctor
         run: phantomrecon doctor
+
+      - name: Provider diagnostics
+        run: phantomrecon providers

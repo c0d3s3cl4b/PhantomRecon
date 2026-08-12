@@ -10,6 +10,7 @@ from rich import box
 from rich.align import Align
 from rich.table import Table
 
+import core.builtin_providers  # noqa: F401
 from core.banner import (
     console,
     get_input,
@@ -17,27 +18,13 @@ from core.banner import (
     print_info,
     show_module_banner,
 )
+from core.providers import registry
 from core.result import ScanResult
 from core.utils import ask_save_report, pause, validate_domain
 
 SUBDOMAIN_WORDLIST = [
-    "www",
-    "mail",
-    "api",
-    "dev",
-    "staging",
-    "test",
-    "app",
-    "blog",
-    "shop",
-    "portal",
-    "cdn",
-    "static",
-    "assets",
-    "auth",
-    "sso",
-    "docs",
-    "status",
+    "www", "mail", "api", "dev", "staging", "test", "app", "blog", "shop",
+    "portal", "cdn", "static", "assets", "auth", "sso", "docs", "status",
 ]
 
 DNS_ERRORS = (
@@ -49,7 +36,6 @@ DNS_ERRORS = (
 
 
 def normalize_domain(domain: str) -> str:
-    """Normalize and validate a domain target."""
     domain = (
         domain.strip()
         .lower()
@@ -63,31 +49,27 @@ def normalize_domain(domain: str) -> str:
 
 
 def crt_sh_lookup(domain: str, timeout: float = 15.0) -> set[str]:
-    """Discover subdomains from certificate transparency logs."""
+    provider = registry.get("crt.sh")
     found: set[str] = set()
     try:
-        response = requests.get(
-            "https://crt.sh/",
-            params={"q": f"%.{domain}", "output": "json"},
-            timeout=timeout,
-        )
-        response.raise_for_status()
-        for entry in response.json():
-            for name in entry.get("name_value", "").split("\n"):
-                name = name.strip().lower()
-                if name.endswith(f".{domain}") and "*" not in name:
-                    found.add(name)
+        data = provider.handler(domain, timeout=timeout)
     except (requests.RequestException, ValueError):
-        return set()
+        return found
+    if not isinstance(data, list):
+        return found
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        for name in entry.get("name_value", "").split("\n"):
+            name = name.strip().lower()
+            if name.endswith(f".{domain}") and "*" not in name:
+                found.add(name)
     return found
 
 
 def resolve_subdomain(hostname: str) -> list[str]:
-    """Resolve IPv4 addresses for one hostname."""
     try:
-        return sorted(
-            {str(answer) for answer in dns.resolver.resolve(hostname, "A")}
-        )
+        return sorted({str(answer) for answer in dns.resolver.resolve(hostname, "A")})
     except DNS_ERRORS:
         return []
 
@@ -99,18 +81,13 @@ def find_subdomains(
     timeout: float = 15.0,
     workers: int = 10,
 ) -> ScanResult:
-    """Find subdomains passively, with optional bounded DNS checks."""
     try:
         domain = normalize_domain(domain)
     except ValueError as exc:
         return ScanResult.failure("subdomain_finder", domain, str(exc))
 
     records: dict[str, dict[str, object]] = {
-        name: {
-            "hostname": name,
-            "sources": ["crt.sh"],
-            "addresses": [],
-        }
+        name: {"hostname": name, "sources": ["crt.sh"], "addresses": []}
         for name in crt_sh_lookup(domain, timeout)
     }
 
@@ -118,9 +95,7 @@ def find_subdomains(
         workers = max(1, min(workers, 20))
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {
-                executor.submit(resolve_subdomain, f"{word}.{domain}"): (
-                    f"{word}.{domain}"
-                )
+                executor.submit(resolve_subdomain, f"{word}.{domain}"): f"{word}.{domain}"
                 for word in SUBDOMAIN_WORDLIST
             }
             for future in as_completed(futures):
@@ -128,14 +103,9 @@ def find_subdomains(
                 addresses = future.result()
                 if not addresses:
                     continue
-
                 record = records.setdefault(
                     hostname,
-                    {
-                        "hostname": hostname,
-                        "sources": [],
-                        "addresses": [],
-                    },
+                    {"hostname": hostname, "sources": [], "addresses": []},
                 )
                 sources = record["sources"]
                 if "dns" not in sources:
@@ -149,6 +119,7 @@ def find_subdomains(
         data={
             "domain": domain,
             "mode": "passive+dns" if active_dns else "passive",
+            "provider": "crt.sh",
             "total": len(subdomains),
             "subdomains": subdomains,
         },
@@ -156,7 +127,6 @@ def find_subdomains(
 
 
 def run() -> None:
-    """Run the classic interactive subdomain interface."""
     show_module_banner("Subdomain Finder", "🌍")
     print_info("Enter the target domain name (passive crt.sh mode)")
     target = get_input("Domain")
@@ -164,13 +134,11 @@ def run() -> None:
         print_error("No domain entered.")
         pause()
         return
-
     result = find_subdomains(target)
     if result.status != "success":
         print_error(result.errors[0])
         pause()
         return
-
     entries = result.data["subdomains"]
     if entries:
         table = Table(
@@ -181,20 +149,12 @@ def run() -> None:
         table.add_column("Subdomain")
         table.add_column("Source")
         for entry in entries:
-            table.add_row(
-                str(entry["hostname"]),
-                ", ".join(entry["sources"]),
-            )
+            table.add_row(str(entry["hostname"]), ", ".join(entry["sources"]))
         console.print(Align.center(table))
     else:
         print_error("No subdomains found in certificate transparency data.")
-
-    report = {
-        "Target Domain": result.target,
-        "Total Subdomains": result.data["total"],
-    }
+    report = {"Target Domain": result.target, "Total Subdomains": result.data["total"]}
     for entry in entries:
         report[str(entry["hostname"])] = ", ".join(entry["sources"])
-
     ask_save_report(report, "subdomain_finder", result.target)
     pause()
